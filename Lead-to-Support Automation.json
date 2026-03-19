@@ -1,0 +1,597 @@
+{
+  "name": "Lead-to-Support Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "<__PLACEHOLDER_VALUE__webhook-path (e.g., lead-intake)__>",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "47602820-0a1c-4074-95d0-c9d7345fccb9",
+      "name": "Webhook - Receive Lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        400
+      ],
+      "webhookId": "e4a9e75c-2987-4bff-8998-d7f3a855aa7a"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n\n// Get webhook data\nconst item = $input.first();\nconst body = item.json.body || {};\n\n// Validation\nconst errors = [];\nconst spamKeywords = ['viagra', 'casino', 'lottery', 'winner', 'click here', 'free money'];\n\n// Required fields\nif (!body.name || body.name.trim() === '') errors.push('Missing name');\nif (!body.email || body.email.trim() === '') errors.push('Missing email');\nif (!body.message || body.message.trim() === '') errors.push('Missing message');\nif (!body.product || body.product.trim() === '') errors.push('Missing product');\n\n// Email validation\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nif (body.email && !emailRegex.test(body.email)) {\n  errors.push('Invalid email format');\n}\n\n// Spam detection\nconst messageText = (body.message || '').toLowerCase();\nconst hasSpam = spamKeywords.some(keyword => messageText.includes(keyword));\nif (hasSpam) errors.push('Spam keywords detected');\n\n// Check for suspicious patterns\nif (body.message && body.message.length > 5000) {\n  errors.push('Message too long (possible spam)');\n}\n\n// Enrich: company from email domain if not provided\nlet company = body.company || '';\nif (!company && body.email) {\n  const domain = body.email.split('@')[1];\n  if (domain && !['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com'].includes(domain)) {\n    company = domain.split('.')[0];\n  }\n}\n\n// Generate unique ID for idempotency\nconst idempotencyKey = crypto.createHash('md5')\n  .update(body.email + body.message + (body.product || ''))\n  .digest('hex');\n\n// Normalize urgency\nconst urgency = (body.urgency || 'normal').toLowerCase();\n\nreturn [{\n  json: {\n    id: idempotencyKey,\n    name: body.name,\n    email: body.email,\n    company: company,\n    message: body.message,\n    urgency: urgency === 'high' ? 'high' : 'normal',\n    product: body.product,\n    timestamp: new Date().toISOString(),\n    isValid: errors.length === 0,\n    errors: errors\n  }\n}];"
+      },
+      "id": "fb1c225e-6f4e-45ac-a471-e5263b3070d7",
+      "name": "Validate & Enrich Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isValid }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "650e8790-91bb-4405-83ac-4aba39f426ba",
+      "name": "Check Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        688,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "title": "HELLO",
+        "sheetsUi": {
+          "sheetValues": [
+            {
+              "title": "DATA"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a73845ed-3b7c-4d93-a8aa-8eb79b35cb1d",
+      "name": "Check for Duplicate",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        912,
+        304
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "nP8zcCCzHcdcVy8w",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $input.all().length }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4cdf4bc2-e6fb-47ff-b8b5-e3ae6ea29821",
+      "name": "Is Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1136,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"duplicate\", \"message\": \"Lead already exists\", \"id\": $(\"Validate & Enrich Lead\").item.json.id } }}",
+        "options": {}
+      },
+      "id": "34445683-4bfa-4954-9d32-b09bac460c36",
+      "name": "Respond - Duplicate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1360,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "options": {}
+      },
+      "id": "053cb52b-15f7-4b03-b26d-8ad5497bebec",
+      "name": "Store Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1360,
+        400
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "JSHHz8ELftzT3GjN",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $(\"Validate & Enrich Lead\").item.json.urgency }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "high"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7fcca142-f62a-4756-ac63-f0a00882051b",
+      "name": "Route by Urgency",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1584,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "messageType": "block",
+        "blocksUi": "={{ [{\"type\": \"header\", \"text\": {\"type\": \"plain_text\", \"text\": \"🚨 High Urgency Lead\"}}, {\"type\": \"section\", \"fields\": [{\"type\": \"mrkdwn\", \"text\": \"*Name:*\\n\" + $(\"Validate & Enrich Lead\").item.json.name}, {\"type\": \"mrkdwn\", \"text\": \"*Email:*\\n\" + $(\"Validate & Enrich Lead\").item.json.email}, {\"type\": \"mrkdwn\", \"text\": \"*Company:*\\n\" + ($(\"Validate & Enrich Lead\").item.json.company || \"N/A\")}, {\"type\": \"mrkdwn\", \"text\": \"*Product:*\\n\" + $(\"Validate & Enrich Lead\").item.json.product}]}, {\"type\": \"section\", \"text\": {\"type\": \"mrkdwn\", \"text\": \"*Message:*\\n\" + $(\"Validate & Enrich Lead\").item.json.message}}] }}",
+        "text": "={{ \"🚨 High Urgency Lead: \" + $(\"Validate & Enrich Lead\").item.json.name }}",
+        "otherOptions": {}
+      },
+      "id": "99ccb4b4-cfac-4117-b980-0f238915052c",
+      "name": "Send Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1808,
+        304
+      ],
+      "webhookId": "99b69af8-a7fd-4fb6-8aad-6d2e1937f449",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "XHQ8VVY3INjVzWqm",
+          "name": "Slack OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "project": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "issueType": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "summary": "={{ \"High Urgency Lead: \" + $(\"Validate & Enrich Lead\").item.json.name + \" - \" + $(\"Validate & Enrich Lead\").item.json.product }}",
+        "additionalFields": {
+          "description": "={{ \"Lead Details:\\n\\nName: \" + $(\"Validate & Enrich Lead\").item.json.name + \"\\nEmail: \" + $(\"Validate & Enrich Lead\").item.json.email + \"\\nCompany: \" + ($(\"Validate & Enrich Lead\").item.json.company || \"N/A\") + \"\\nProduct: \" + $(\"Validate & Enrich Lead\").item.json.product + \"\\n\\nMessage:\\n\" + $(\"Validate & Enrich Lead\").item.json.message }}",
+          "priority": {
+            "__rl": true,
+            "mode": "list",
+            "value": ""
+          }
+        }
+      },
+      "id": "440986e1-dc67-46e8-83b1-9ee19eaeb4cb",
+      "name": "Create Jira Ticket",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [
+        2032,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"success\", \"message\": \"Lead received and processed\", \"id\": $(\"Validate & Enrich Lead\").item.json.id, \"urgency\": $(\"Validate & Enrich Lead\").item.json.urgency } }}",
+        "options": {}
+      },
+      "id": "be40f87a-b47e-424c-812e-7332654183f5",
+      "name": "Respond - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2256,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $(\"Validate & Enrich Lead\").item.json.email }}",
+        "subject": "={{ \"Thank you for contacting us, \" + $(\"Validate & Enrich Lead\").item.json.name }}",
+        "message": "={{ \"<p>Dear \" + $(\"Validate & Enrich Lead\").item.json.name + \",</p><p>Thank you for your interest in our \" + $(\"Validate & Enrich Lead\").item.json.product + \". We have received your message and will get back to you shortly.</p><p>Best regards,<br>Support Team</p>\" }}",
+        "options": {}
+      },
+      "id": "2e142e57-1e6e-4cf5-98e2-b2d66db5009a",
+      "name": "Send Confirmation Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2032,
+        496
+      ],
+      "webhookId": "ba030956-5cf2-4aa7-87d7-9a9209753a8d"
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "options": {}
+      },
+      "id": "17e09e06-8894-4ac4-8f3b-1a604cd04265",
+      "name": "Store Failed Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        912,
+        496
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "JSHHz8ELftzT3GjN",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"error\", \"message\": \"Validation failed\", \"errors\": $(\"Validate & Enrich Lead\").item.json.errors } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "de2e6858-cd78-410d-93b9-1e887dbc6da3",
+      "name": "Respond - Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1136,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 18
+            }
+          ]
+        }
+      },
+      "id": "4b048860-6121-4fb4-a4a1-53b7515ebbaa",
+      "name": "Daily Digest - 6 PM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "options": {}
+      },
+      "id": "9bdc4e40-4a87-4eb0-ac99-b1ea547cfe26",
+      "name": "Fetch Today Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        464,
+        720
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "JSHHz8ELftzT3GjN",
+          "name": "Google Sheets OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst today = new Date();\ntoday.setHours(0, 0, 0, 0);\n\nconst todayLeads = items.filter(item => {\n  const timestamp = new Date(item.json.Timestamp);\n  timestamp.setHours(0, 0, 0, 0);\n  return timestamp.getTime() === today.getTime();\n});\n\nreturn todayLeads.length > 0 ? todayLeads : [{ json: {} }];"
+      },
+      "id": "8187708e-ff6b-4f72-877a-2e175601bff9",
+      "name": "Filter Today Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n// Count by urgency\nconst urgencyCounts = { high: 0, normal: 0 };\nitems.forEach(item => {\n  const urgency = (item.json.Urgency || 'normal').toLowerCase();\n  if (urgency === 'high') urgencyCounts.high++;\n  else urgencyCounts.normal++;\n});\n\n// Count by product\nconst productCounts = {};\nitems.forEach(item => {\n  const product = item.json.Product || 'Unknown';\n  productCounts[product] = (productCounts[product] || 0) + 1;\n});\n\n// Top 5 recent leads\nconst sortedLeads = items\n  .sort((a, b) => new Date(b.json.Timestamp) - new Date(a.json.Timestamp))\n  .slice(0, 5)\n  .map(item => ({\n    name: item.json.Name,\n    email: item.json.Email,\n    company: item.json.Company || 'N/A',\n    product: item.json.Product,\n    urgency: item.json.Urgency\n  }));\n\nreturn [{\n  json: {\n    totalLeads: items.length,\n    urgencyCounts: urgencyCounts,\n    productCounts: productCounts,\n    topRecentLeads: sortedLeads,\n    date: new Date().toISOString().split('T')[0]\n  }\n}];"
+      },
+      "id": "e04e842f-0c14-4dd0-842a-15ff6b2c6dea",
+      "name": "Aggregate Stats",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "messageType": "block",
+        "blocksUi": "={{ [{\"type\": \"header\", \"text\": {\"type\": \"plain_text\", \"text\": \"📊 Daily Lead Digest - \" + $json.date}}, {\"type\": \"section\", \"text\": {\"type\": \"mrkdwn\", \"text\": \"*Total Leads:* \" + $json.totalLeads}}, {\"type\": \"section\", \"fields\": [{\"type\": \"mrkdwn\", \"text\": \"*High Urgency:* \" + $json.urgencyCounts.high}, {\"type\": \"mrkdwn\", \"text\": \"*Normal:* \" + $json.urgencyCounts.normal}]}, {\"type\": \"section\", \"text\": {\"type\": \"mrkdwn\", \"text\": \"*By Product:*\\n\" + Object.entries($json.productCounts).map(([k, v]) => \"• \" + k + \": \" + v).join(\"\\n\")}}, {\"type\": \"section\", \"text\": {\"type\": \"mrkdwn\", \"text\": \"*Top 5 Recent Leads:*\\n\" + $json.topRecentLeads.map((l, i) => (i+1) + \". \" + l.name + \" (\" + l.email + \") - \" + l.product + \" [\" + l.urgency + \"]\").join(\"\\n\")}}] }}",
+        "text": "={{ \"📊 Daily Lead Digest - \" + $json.date }}",
+        "otherOptions": {}
+      },
+      "id": "15cbffeb-3a07-4ad6-b289-81890efb4eb4",
+      "name": "Send Daily Digest",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [
+        1136,
+        720
+      ],
+      "webhookId": "df6be3bb-dbdf-4d1e-a6ab-07fb9c4b3ca1",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "Vn1d99gCXJ4CykN0",
+          "name": "Slack OAuth2 API"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Receive Lead": {
+      "main": [
+        [
+          {
+            "node": "Validate & Enrich Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Enrich Lead": {
+      "main": [
+        [
+          {
+            "node": "Check Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Valid": {
+      "main": [
+        [
+          {
+            "node": "Check for Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Store Failed Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Is Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Respond - Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Store Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Lead": {
+      "main": [
+        [
+          {
+            "node": "Route by Urgency",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Urgency": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Confirmation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Slack Alert": {
+      "main": [
+        [
+          {
+            "node": "Create Jira Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Jira Ticket": {
+      "main": [
+        [
+          {
+            "node": "Respond - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Confirmation Email": {
+      "main": [
+        [
+          {
+            "node": "Respond - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Failed Lead": {
+      "main": [
+        [
+          {
+            "node": "Respond - Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Digest - 6 PM": {
+      "main": [
+        [
+          {
+            "node": "Fetch Today Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Today Leads": {
+      "main": [
+        [
+          {
+            "node": "Filter Today Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Today Leads": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Stats": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "e91d4854-484f-4378-84a0-5532d226ba52",
+  "meta": {
+    "instanceId": "ba6fad16b2da4e6308754beddf51924bb94e027d8b50eb35fdffb66bba273b12"
+  },
+  "id": "nld6s3kzoHjbvcVx",
+  "tags": []
+}
